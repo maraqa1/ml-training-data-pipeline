@@ -25,7 +25,8 @@ openai_request_topics <- function(prompt, api_key, model = "gpt-3.5-turbo-instru
   full_prompt <- paste(
     "Extract a single main topic, including a single domain, level 1, and possible level 2, from the following description:\n",
     prompt,
-    "\nFormat output like the following example:\nDomain: Agronomics\nLevel 1: Statistical Approaches in Precision Farming\nLevel 2: High Precision Spatial Experimentation on Farm\n"
+    "\nFormat output like the following example:\nDomain: Agronomics\nLevel 1: Statistical Approaches in Precision Farming\nLevel 2: High Precision Spatial Experimentation on Farm\n",
+    "if Not enough information is avilable to to determine. Then note -NA-"
   )
   
   # Define request payload
@@ -122,6 +123,7 @@ openai_request_sectors <- function(prompt, api_key, model = "gpt-3.5-turbo-instr
     "Important: Do not combine the Primary and Secondary sectors in a single line.",
     "Important: Use the exact format as shown above, with the '---' separator between the two fields.",
     "Use the exact format as shown above with the sector names on separate lines.",
+    "if Not enough information is avilable to to determine. Then note -NA-",
     "",
     "Description:",
     prompt,
