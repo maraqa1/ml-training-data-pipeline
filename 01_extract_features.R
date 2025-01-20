@@ -298,7 +298,6 @@ process_dataframe_with_sectors <- function(data, api_key, model = "gpt-3.5-turbo
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 
-api_key <- "sk-proj-7xmG19eewuG8cUM89TaPT3BlbkFJdXxzFQ2yzuirj96y6FK1"
 
 # Load Libraries
 library(httr)
