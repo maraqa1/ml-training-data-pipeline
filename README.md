@@ -1,250 +1,261 @@
-# **Topic Modeling and Clustering Pipeline**
+# **Topic Modeling and Clustering Pipeline Documentation**
 
-This repository contains an end-to-end pipeline for topic modeling and clustering using enriched text features, optimized dimensionality reduction, and iterative clustering refinement. The pipeline processes large text datasets, extracts meaningful topics, and assigns concise labels for each cluster using advanced NLP techniques and APIs.
-
----
-
-## **Table of Contents**
-
-1. [Introduction](#introduction)
-2. [Features](#features)
-3. [Installation](#installation)
-4. [Usage](#usage)
-5. [Pipeline Workflow](#pipeline-workflow)
-6. [Detailed Steps](#detailed-steps)
-7. [Outputs](#outputs)
-8. [Optimization Techniques](#optimization-techniques)
-9. [Reproducibility Guidance](#reproducibility-guidance)
-10. [License](#license)
+## **Objective**
+To process text data and cluster documents into meaningful topics using enriched features generated with the OpenAI API. The clustering outputs include a Document-Feature Matrix (DFM) and a refined K-means model, optimized for computational efficiency and coherence. These models will be integral to the **SectorInsightRv2** package for downstream analysis and deployment.
 
 ---
 
-## **Introduction**
+## **Pipeline Overview**
 
-This project focuses on building a robust pipeline for processing and clustering textual data. It uses:
+This pipeline consists of the following stages:
 
-- **Text cleaning** with custom and library-based functions.
-- **NLP models** for extracting enriched features like domains, sectors, and hierarchical topics.
-- **Clustering algorithms** such as K-means, optimized with dimensionality reduction techniques like TF-IDF.
-- **Refinement techniques** using LDA for sub-clustering low-coherence clusters.
-- **Parallel processing** for efficient handling of large datasets.
-
-The primary goal is to create meaningful clusters and label them for interpretability and downstream analysis.
-
----
-
-## **Features**
-
-- **Text Preprocessing**: Comprehensive text cleaning and tokenization.
-- **Feature Extraction**: Use of OpenAI API to extract hierarchical topics and sectors.
-- **Efficient Clustering**: Dimensionality reduction with TF-IDF and optimized K-means.
-- **Cluster Refinement**: Iterative LDA-based sub-clustering for granular topics.
-- **Top Terms Extraction**: Identification of key terms per cluster for interpretability.
-- **Cluster Labeling**: Automated labeling using ChatGPT and user-provided labels.
-- **Parallel Processing**: Scalable processing using `furrr` and `future` libraries.
-- **Customizable**: Supports different datasets and customizable preprocessing options.
+1. **Data Ingestion**
+2. **Text Preprocessing**
+3. **Chunking and Size Optimization**
+4. **Feature Engineering with OpenAI API**
+5. **Building the Document-Feature Matrix (DFM)**
+6. **Clustering**
+7. **Post-Clustering Enhancements**
+8. **Refinement of Clusters**
+9. **Label Assignment**
+10. **Saving Models for SectorInsightRv2**
 
 ---
 
-## **Installation**
+## **Detailed Stages**
 
-### Prerequisites
+### **1. Data Ingestion**
+**Input:** CSV file containing raw text (`PublicDescription`) and metadata.
 
-Ensure the following are installed on your system:
-- R (version 4.0 or later)
-- Required R libraries (listed below)
+**Process:**
+- Load the CSV file into a dataframe.
+- Validate the data (e.g., check for missing or malformed text entries).
 
-### Steps
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/username/repo-name.git
-   cd repo-name
-   ```
-
-2. Install required R packages:
-   ```R
-   install.packages(c("tidyverse", "tm", "textclean", "tidytext", "quanteda", "cluster", "udpipe", "furrr", "progressr", "textmineR"))
-   ```
-
-3. Download and configure the Udpipe English model:
-   ```R
-   ud_model <- udpipe_download_model(language = "english")
-   ud_model <- udpipe_load_model(file = ud_model$file_model)
-   ```
+**Output:** A dataframe with `PublicDescription` and other fields ready for processing.
 
 ---
 
-## **Usage**
+### **2. Text Preprocessing**
+**Purpose:** Normalize text and prepare it for feature extraction by cleaning and simplifying the raw input.
 
-### Preprocessing and Feature Extraction
+**Steps:**
+1. Convert text to lowercase to ensure uniformity.
+2. Remove punctuation, stopwords, and numbers to focus on meaningful terms.
 
-1. Prepare your dataset as a CSV file with at least the following column:
-   - `PublicDescription`: A column containing textual descriptions.
-
-2. Use the provided functions to clean and preprocess the text, extract features, and create a TF-IDF matrix.
-
-3. Apply clustering algorithms to group similar documents.
-
-### Example Workflow
-
-```R
-process_large_file(
-  input_file = "path/to/input.csv",
-  output_dir = "path/to/output/",
-  api_key = "your_openai_api_key",
-  sample_size = 1000,  # Optional
-  chunk_size = 100     # Adjust as needed
-)
-```
-
-### Generating Cluster Labels
-
-Extract cluster terms and generate concise labels using ChatGPT:
-
-```R
-top_terms_df <- extract_cluster_terms(tfidf_reduced, new_kmeans_model, top_n = 30)
-```
-
-Refine clusters using LDA for sub-clustering:
-
-```R
-new_clusters <- split_clusters_with_lda(tfidf_reduced, kmeans_model_updated, k = 5, coherence_threshold = 0.08)
-```
-
-Save the results:
-
-```R
-saveRDS(new_kmeans_model, file = "output/models/kmeans_model.rds")
-saveRDS(tfidf_reduced, file = "output/models/tfidf_reduced.rds")
-```
+**Output:** A dataframe with cleaned text stored in the `cleaned_text` column, ready for subsequent processing.
 
 ---
 
-## **Pipeline Workflow**
+### **3. Chunking Data for API Processing**
 
-### Overview
+**Purpose:** Split the data into smaller, manageable chunks to efficiently process it through the OpenAI API while adhering to API limits and optimizing memory usage.
 
-1. **Data Loading**:
-   - Read the dataset from a CSV file.
-   - Combine relevant columns into a single text field.
+#### **Steps:**
+1. Divide the dataset into chunks of a specified size (e.g., 1000 rows per chunk) to streamline processing.
+2. Send each chunk to the OpenAI API for feature extraction, ensuring compliance with API rate limits.
+3. Collect and consolidate the results from all chunks into a single dataframe for subsequent processing.
 
-2. **Text Preprocessing**:
-   - Clean text to remove unnecessary elements.
-   - Extract linguistic features (nouns, verbs) using Udpipe.
-
-3. **Feature Engineering**:
-   - Apply TF-IDF to create a document-feature matrix.
-   - Reduce the matrix size for clustering.
-
-4. **Clustering**:
-   - Perform K-means clustering with an optimized number of clusters (`k`).
-   - Extract top terms for each cluster for interpretability.
-
-5. **Cluster Refinement**:
-   - Use LDA to refine clusters with low coherence scores.
-
-6. **Cluster Labeling**:
-   - Generate concise and meaningful labels for each cluster.
-
-7. **Save Outputs**:
-   - Save the final clustering model and TF-IDF matrix for reuse.
+**Advantages:**
+- Manages memory efficiently by processing smaller subsets.
+- Facilitates parallel processing to speed up API calls.
 
 ---
 
-## **Detailed Steps**
+### **4. Feature Engineering with OpenAI API**
+**Purpose:** Use OpenAI's API to generate text features. For this purpose, an API key has to be generated. Follow the instructions at [OpenAI API Key Setup](https://platform.openai.com/account/api-keys) to create your API key.
 
-### Step 1: Data Preparation
+**Steps:**
+- Extract hierarchical topics from `PublicDescription`:
+  - Domain
+  - Level 1
+  - Level 2
+- Identify sectors:
+  - Primary Sector
+  - Secondary Sector
+- Combine extracted features with `PublicDescription` to form a `combined_features` column.
 
-- Ensure the dataset is clean and structured.
-- Example structure:
-  | doc_id | PublicDescription         |
-  |--------|---------------------------|
-  | 1      | "Analyzing renewable energy..." |
-  | 2      | "Exploring AI in healthcare..." |
-
-### Step 2: Text Preprocessing
-
-- Clean the text to standardize formatting.
-- Remove stopwords, punctuation, and numbers.
-- Extract meaningful words using the Udpipe model.
-
-### Step 3: Feature Engineering
-
-- Generate a document-feature matrix using TF-IDF.
-- Tokenize text into unigrams, bigrams, and trigrams.
-- Filter the top terms to reduce matrix size.
-
-### Step 4: Clustering
-
-- Apply K-means clustering to group documents.
-- Optimize the number of clusters using Silhouette scores.
-
-### Step 5: Cluster Refinement
-
-- Use LDA for sub-clustering large or low-coherence clusters.
-- Reassign documents to refined clusters.
-
-### Step 6: Labeling and Saving Results
-
-- Extract top terms for each cluster.
-- Use ChatGPT or manual methods to assign meaningful labels.
-- Save the final clustering model and associated data.
+**Output:** A dataframe with `Domain`, `Level 1`, `Level 2`, `Primary Sector`, `Secondary Sector`, and `combined_features` ready for clustering.
 
 ---
 
-## **Outputs**
+### **5. Building the Document-Feature Matrix (DFM)**
 
-### Files
+**Purpose:** Use the consolidated API results to create a unified Document-Feature Matrix (DFM) for clustering.
 
-1. **Clustered Data**:
-   - File: `output/consolidated_results.csv`
-   - Description: Contains enriched features and cluster assignments.
+#### **Steps:**
+1. Use the consolidated results from the API to generate the DFM:
+   - Tokenize `combined_features` into unigrams, bigrams, and trigrams.
+   - Extract nouns and verbs from `combined_features` using the `udpipe` model. These linguistic features are stored in the `cleaned_text_1` column.
+   - Apply TF-IDF weighting to emphasize distinctive terms.
+2. Retain the top 1000 terms with the highest TF-IDF scores across the entire dataset:
+   - Compute column sums of the DFM to identify frequent terms.
+   - Filter terms to create a reduced DFM.
 
-2. **K-means Model**:
+**Advantages:**
+- Focuses on the most relevant terms for clustering.
+- Reduces computational load while maintaining meaningful features.
+
+---
+
+### **6. Clustering**
+
+#### **Building the K-means Model**
+**Purpose:** Cluster documents into topics based on the reduced DFM.
+
+**Process:**
+1. Set the number of clusters (`k`) based on evaluation metrics such as:
+   - Silhouette score.
+   - Elbow method.
+2. Train a K-means model using the reduced DFM.
+3. Assign documents to clusters and calculate centroids.
+
+**Output:**
+- Cluster assignments for each document.
+- Cluster centroids representing the central term distributions.
+
+---
+
+### **7. Post-Clustering Enhancements**
+
+#### **Cluster Analysis**
+1. Extract top terms for each cluster from the centroids:
+   - Rank terms by their importance within the cluster.
+   - Identify shared terms to assess overlap across clusters.
+
+2. Evaluate cluster coherence:
+   - Analyze intra-cluster similarity.
+   - Use external validation (e.g., domain-specific knowledge).
+
+#### **LDA-based Sub-clustering**
+1. Apply Latent Dirichlet Allocation (LDA) to refine large or incoherent clusters:
+   - Identify subtopics within clusters.
+   - Split clusters where average topic coherence is below a threshold.
+2. Assign documents to sub-clusters and update centroids.
+
+#### **Recalculate Cluster Centers**
+1. Update centroids to reflect the refined clusters:
+   - Use the mean vector of all documents within each cluster.
+2. Optimize cluster assignments based on recalculated centers.
+
+---
+
+### **8. Refinement of Clusters**
+**Purpose:** Further improve cluster coherence and interpretability.
+
+**Process:**
+- Reassign documents based on similarity to cluster centroids.
+- Merge or split clusters as needed based on content analysis.
+
+**Output:**
+- Refined cluster assignments and centroids.
+
+---
+
+### **9. Label Assignment**
+**Purpose:** Assign meaningful, concise labels to clusters.
+
+**Process:**
+1. Extract top terms for each cluster from the DFM.
+2. Use ChatGPT to suggest labels based on the top terms.
+3. Assign labels to clusters for interpretability.
+
+**Output:** A labeled clustering model.
+
+---
+
+### **10. Saving Models for SectorInsightRv2**
+**Purpose:** Save the key outputs for integration into the **SectorInsightRv2** package.
+
+#### **Steps:**
+1. Save the **Document-Feature Matrix (DFM):**
+   - File: `output/models/dfm_reduced.rds`
+   - Description: Contains the top 1000 terms for clustering and analysis.
+
+2. Save the **K-means Model:**
    - File: `output/models/kmeans_model.rds`
-   - Description: Includes updated cluster centers and labels.
+   - Description: Includes cluster assignments and centroids.
 
-3. **TF-IDF Matrix**:
-   - File: `output/models/tfidf_reduced.rds`
-   - Description: Reduced matrix for clustering.
+3. Save additional outputs:
+   - Refined clusters using LDA for sub-clustering.
+   - Extracted linguistic features (nouns and verbs) from `udpipe` for enriched analysis.
 
-### Logs
+4. Maintain a version-controlled directory structure for model updates and reuse.
 
-- Debugging logs are generated for each step of the pipeline.
+**Output:**
+- Two primary models (`dfm_reduced.rds` and `kmeans_model.rds`) and auxiliary data for advanced analysis are prepared for deployment in SectorInsightRv2.
 
 ---
 
-## **Optimization Techniques**
+## **Integration with SectorInsightRv2**
 
-- **Parallel Processing**:
-  - Use `furrr` and `future` for parallel execution of heavy tasks.
+### **Usage of DFM and K-means Models**
+1. **DFM for Topic Analysis:**
+   - The DFM can be loaded into SectorInsightRv2 to analyze term distributions across topics.
+   - Enables visualization of term importance and facilitates keyword-based filtering.
 
-- **Dimensionality Reduction**:
-  - Retain only top TF-IDF terms to improve clustering performance.
+2. **K-means Model for Classification:**
+   - Use the K-means model to classify new documents into existing clusters.
+   - Leverage centroids to identify the closest topic for a given document.
 
-- **Cluster Refinement**:
-  - Apply LDA for sub-clustering and improving topic granularity.
+#### **Example:**
+```r
+# Load saved models
+kmeans_model <- readRDS("output/models/kmeans_model.rds")
+dfm <- readRDS("output/models/dfm_reduced.rds")
+
+# Predict cluster for a new document
+new_document <- "Exploring renewable energy solutions for rural communities."
+tokenized_doc <- quanteda::tokens(new_document, ngrams = 1:3)
+tfidf_doc <- quanteda::dfm(tokenized_doc, tolower = TRUE)
+
+# Match with existing clusters
+cluster_assignment <- predict(kmeans_model, newdata = tfidf_doc)
+cat("Assigned Cluster:", cluster_assignment)
+```
+
+---
+
+## **Optimization Strategies**
+
+### **Chunking for Scalability**
+- Divide data into smaller chunks for efficient processing.
+- Process chunks in parallel to maximize resource utilization.
+
+### **Dimensionality Reduction**
+- Retain only the top 1000 terms based on TF-IDF scores.
+- Use these terms to generate a reduced DFM for clustering.
+
+### **Dynamic Refinement**
+- Apply LDA to refine low-coherence clusters.
+- Recalculate cluster centers iteratively to ensure stability.
+
+---
+
+## **Key Outputs**
+
+### **Document-Feature Matrix**
+- Sparse matrix with the top 1000 terms.
+- Ready for clustering and sub-clustering.
+
+### **K-means Model**
+- Cluster assignments and centroids.
+- Refined through LDA and recalculated centroids.
+
+### **Cluster Labels**
+- Concise and interpretable labels generated via ChatGPT.
+
+### **SectorInsightRv2 Integration**
+- The **DFM** and **K-means model** are designed for seamless integration into SectorInsightRv2, providing reusable, scalable solutions for sector-based insights.
 
 ---
 
 ## **Reproducibility Guidance**
 
-1. **Dependencies**:
-   - List all required libraries in your R environment.
-
-2. **Environment Setup**:
-   - Use consistent seeds for reproducibility.
-   - Configure the environment for parallel processing.
-
-3. **Version Control**:
+1. **Version Control:**
    - Track all changes using Git.
-
-4. **Testing**:
-   - Validate the pipeline on smaller datasets before scaling.
-
----
-
-## **License**
-
-This project is licensed under the MIT License. See the LICENSE file for details.
+2. **Environment Setup:**
+   - Ensure required R libraries are installed.
+3. **Random Seeds:**
+   - Set random seeds for clustering to ensure consistent results.
+4. **Testing:**
+   - Validate the pipeline with a small dataset before scaling up.
