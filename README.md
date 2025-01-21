@@ -74,7 +74,7 @@ This pipeline consists of the following stages:
   - Secondary Sector
 - Combine extracted features with `PublicDescription` to form a `combined_features` column.
 
-**Output:** A dataframe with `Domain`, `Level 1`, `Level 2`, `Primary Sector`, `Secondary Sector`, and `combined_features` ready for clustering.
+**Output:** A dataframe with `Domain`, `Level 1`, `Level 2`, `Primary Sector`, `Secondary Sector`. Then `combined_features` is the concatenation of the "hierarchical topics" and "Identified sectors" which is used for clustering.
 
 ---
 
