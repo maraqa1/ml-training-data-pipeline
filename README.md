@@ -86,7 +86,7 @@ This pipeline consists of the following stages:
 1. Use the consolidated results from the API to generate the DFM:
    - Tokenize `combined_features` into unigrams, bigrams, and trigrams.
    - Extract nouns and verbs from `combined_features` using the `udpipe` model. These linguistic features are stored in the `cleaned_text_1` column.
-   - Apply TF-IDF weighting to emphasize distinctive terms.
+   - Apply TF-IDF (Term Frequency-Inverse Document Frequency) weighting to emphasize distinctive terms and down-weight common, less-informative terms
 2. Retain the top 1000 terms with the highest TF-IDF scores across the entire dataset:
    - Compute column sums of the DFM to identify frequent terms.
    - Filter terms to create a reduced DFM.
