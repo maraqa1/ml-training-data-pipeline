@@ -97,14 +97,13 @@ This pipeline consists of the following stages:
 
 ---
 
-# 6. Initial Clustering with K-means
+### 6. Initial Clustering with K-means
 
-## Purpose
-To efficiently group documents into broad clusters using K-means, establishing a scalable and computationally efficient baseline for further refinement. This step creates hard cluster assignments and identifies general topics, which are then refined in subsequent steps using LDA.
+**Purpose:** To efficiently group documents into broad clusters using K-means, establishing a scalable and computationally efficient baseline for further refinement. This step creates hard cluster assignments and identifies general topics, which are then refined in subsequent steps using LDA.
 
 ---
 
-## Rationale for Using K-means First
+#### Rationale for Using K-means First
 1. **Scalability and Efficiency:**
    - K-means is computationally efficient, making it suitable for large datasets and high-dimensional TF-IDF matrices.
    - It works well in cases where the data is numerical (e.g., reduced TF-IDF features) and the clusters are expected to be spherical in the feature space.
@@ -122,9 +121,9 @@ To efficiently group documents into broad clusters using K-means, establishing a
 
 ---
 
-## Steps
+#### Steps
 
-### Step 6.1: Feature Preparation
+##### Step 6.1: Feature Preparation
 1. **Input:** 
    - Processed text data stored in the `cleaned_text_1` column.
    - A Document-Feature Matrix (DFM) with n-grams weighted by TF-IDF.
@@ -135,7 +134,7 @@ To efficiently group documents into broad clusters using K-means, establishing a
 
 ---
 
-### Step 6.2: K-means Clustering
+##### Step 6.2: K-means Clustering
 1. **Input:**
    - The reduced TF-IDF matrix (`tfidf_reduced`).
 2. **Process:**
@@ -151,7 +150,7 @@ To efficiently group documents into broad clusters using K-means, establishing a
 
 ---
 
-## Why Not Use LDA First?
+#### Why Not Use LDA First?
 1. **Scalability Challenges:**
    - LDA is computationally expensive, especially for high-dimensional datasets with a large vocabulary size.
 2. **Initialization Sensitivity:**
@@ -163,14 +162,13 @@ K-means serves as a robust, scalable starting point, while LDA is introduced lat
 
 ---
 
-# 7. Post-Clustering Enhancements with LDA
+### 7. Post-Clustering Enhancements with LDA
 
-## Purpose
-To refine the initial K-means clusters, improve their coherence, and identify subtopics using Latent Dirichlet Allocation (LDA). This step focuses on handling clusters with mixed or overlapping topics that cannot be resolved through K-means alone.
+**Purpose:** To refine the initial K-means clusters, improve their coherence, and identify subtopics using Latent Dirichlet Allocation (LDA). This step focuses on handling clusters with mixed or overlapping topics that cannot be resolved through K-means alone.
 
 ---
 
-## Rationale for Using LDA After K-means
+#### Rationale for Using LDA After K-means
 1. **Addressing Mixed Clusters:**
    - K-means clusters can sometimes group documents with multiple distinct themes due to limitations in handling text's semantic nuances.
    - LDA models documents as mixtures of topics, allowing it to identify and separate subtopics within clusters.
@@ -188,9 +186,9 @@ To refine the initial K-means clusters, improve their coherence, and identify su
 
 ---
 
-## Steps
+#### Steps
 
-### Step 7.1: Cluster Analysis
+##### Step 7.1: Cluster Analysis
 1. **Input:**
    - Initial clusters from K-means.
 2. **Process:**
@@ -205,7 +203,7 @@ To refine the initial K-means clusters, improve their coherence, and identify su
 
 ---
 
-### Step 7.2: LDA-Based Sub-Clustering
+##### Step 7.2: LDA-Based Sub-Clustering
 1. **Input:**
    - Low-coherence clusters identified in step 7.1.
    - Reduced TF-IDF matrix (`tfidf_reduced`).
@@ -221,7 +219,7 @@ To refine the initial K-means clusters, improve their coherence, and identify su
 
 ---
 
-### Step 7.3: Recalculate Cluster Centers
+##### Step 7.3: Recalculate Cluster Centers
 1. **Purpose:**
    - To ensure cluster centroids reflect the refined cluster structure after LDA.
 2. **Process:**
@@ -232,7 +230,7 @@ To refine the initial K-means clusters, improve their coherence, and identify su
 
 ---
 
-## Why Combine K-means and LDA?
+#### Why Combine K-means and LDA?
 
 1. **Efficiency First:** 
    - K-means provides a fast and scalable first-pass clustering.
@@ -244,7 +242,7 @@ To refine the initial K-means clusters, improve their coherence, and identify su
 
 ---
 
-### Final Outputs
+#### Final Outputs
 1. **Cluster Assignments:**
    - Refined assignments with hard or soft clustering as needed.
 2. **Cluster Centroids:**
