@@ -97,21 +97,100 @@ This pipeline consists of the following stages:
 
 ---
 
-### **6. Clustering**
+# 6. Clustering
 
-#### **Building the K-means Model**
-**Purpose:** Cluster documents into topics based on the reduced DFM.
+## Purpose
+To efficiently and interpretably cluster documents into topics by leveraging the computational speed and simplicity of K-means for initial grouping, followed by optional refinements with LDA to improve topic coherence and capture overlapping topics. This process directly sets the foundation for further cluster analysis and refinement in steps 7 and 8.
 
-**Process:**
-1. Set the number of clusters (`k`) based on evaluation metrics such as:
-   - Silhouette score.
-   - Elbow method.
-2. Train a K-means model using the reduced DFM.
-3. Assign documents to clusters and calculate centroids.
+---
 
-**Output:**
-- Cluster assignments for each document.
-- Cluster centroids representing the central term distributions.
+## Steps
+
+### Step 6.1: K-means Clustering for Initial Grouping
+
+#### Input:
+- The reduced Document-Feature Matrix (DFM) generated from the top 1000 terms with the highest TF-IDF scores.
+
+#### Process:
+1. Perform K-means clustering on the reduced DFM.
+2. Select the number of clusters (`k`) based on one or more evaluation metrics:
+    - **Silhouette Score:** Measures the separation and compactness of clusters.
+    - **Elbow Method:** Identifies the optimal `k` by finding the point of diminishing returns in total variance explained.
+    - **Domain Knowledge:** Incorporate external understanding of the data to define meaningful `k`.
+3. For each cluster, calculate centroids to represent the "central" distribution of terms in that cluster.
+
+#### Output:
+- **Cluster Assignments:** Each document is assigned to a single cluster.
+- **Cluster Centroids:** Term distributions summarizing each cluster.
+
+#### Why Use K-means First?
+- **Speed:** K-means is computationally efficient, even for large datasets with high-dimensional data.
+- **Hard Clustering:** K-means provides discrete cluster assignments, making it ideal for initial grouping tasks.
+- **Baseline Coherence:** By capturing broad groupings of documents, K-means establishes a framework for further refinement.
+
+---
+
+### Step 6.2: Refinement with Latent Dirichlet Allocation (Optional)
+
+#### When to Use LDA:
+- Large K-means clusters show poor internal coherence (e.g., mixed subtopics).
+- Some documents naturally belong to multiple topics (soft clustering).
+
+#### Process:
+1. Apply LDA to documents within each K-means cluster.
+2. For large or incoherent clusters:
+    - Use LDA to sub-cluster documents into probabilistic topics.
+    - Split the original K-means cluster based on LDA’s output.
+3. Recalculate centroids for each sub-cluster by averaging document-topic distributions.
+
+#### Advantages of Adding LDA:
+- **Improved Coherence:** Refines clusters by identifying finer-grained subtopics.
+- **Soft Clustering:** Assigns documents probabilistic memberships across topics.
+- **Semantic Refinement:** Captures contextual relationships between terms, which K-means might miss.
+
+#### Output:
+- Refined cluster assignments (sub-clusters).
+- Updated cluster centroids based on LDA’s topic distributions.
+
+#### Preparing for Steps 7 and 8:
+- The refined outputs from this step are used for:
+  - **Cluster Analysis in Step 7:** Extracting top terms, identifying overlaps, and evaluating coherence.
+  - **Document Reassignment in Step 8:** Reassigning documents and merging or splitting clusters to achieve final refined clusters.
+
+---
+
+## Outputs of Clustering
+
+1. **Cluster Assignments:**
+   - Initial hard assignments from K-means.
+   - Refined assignments after LDA-based sub-clustering.
+2. **Cluster Centroids:**
+   - Distributions of terms representing each cluster.
+   - Updated centroids reflecting LDA’s probabilistic assignments.
+3. **Evaluation Metrics:**
+   - Silhouette scores or coherence metrics to measure the quality of clustering.
+
+---
+
+## Why Not Use LDA All the Way?
+
+- **Scalability Challenges:** LDA is computationally expensive, particularly for large corpora and high-dimensional TF-IDF matrices.
+- **Hard Clustering Requirement:** If the task requires discrete cluster assignments, converting LDA’s probabilistic outputs to hard assignments can oversimplify results.
+- **Initialization Sensitivity:** LDA requires careful tuning of the number of topics and other hyperparameters. Poor initialization can lead to incoherent topics.
+- **Efficiency in High-Dimensions:** K-means handles high-dimensional TF-IDF data more efficiently than LDA.
+
+---
+
+## Rationale for Combining K-means and LDA
+
+1. **Efficiency First:** Use K-means to quickly partition documents into broad clusters.
+2. **Refinement Second:** Apply LDA where necessary to improve coherence and handle subtopics.
+3. **Balance:** This hybrid approach leverages the strengths of both methods:
+   - K-means for speed and hard clustering.
+   - LDA for semantic richness and flexibility.
+
+---
+
 
 ---
 
