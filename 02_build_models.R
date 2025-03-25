@@ -67,21 +67,39 @@ extract_cleaned_text <- function(description) {
 library(furrr)
 library(progressr)
 
-# Set up parallel backend
-plan(multisession)  # Use multiple R sessions for parallel processing
+# Set up progress bar globally (one-time setup)
+handlers(global = TRUE)
+handlers("txtprogressbar")  # Or use "rstudio" if you're in RStudio
 
-# Use parallel processing for mutate
-data <- data %>%
-  mutate(cleaned_text_1 = future_map_chr(cleaned_text, ~ extract_cleaned_text(.x)))
+# Use limited number of workers to avoid system overload
+plan(multisession, workers = 10)
 
-# Shut down parallel workers
-plan(sequential)  # Return to sequential processing
+with_progress({
+  # Create progressor (progress bar tracker)
+  p <- progressor(along = data$cleaned_text)
+  
+  data <- data %>%
+    mutate(cleaned_text_1 = future_map_chr(cleaned_text, ~ {
+      p()  # Advance progress bar
+      result <- extract_cleaned_text(.x)
+      
+      # Safety: always return a single character string
+      if (length(result) != 1 || is.null(result)) return(NA_character_)
+      result
+    }))
+})
+
+# Reset back to sequential processing
+plan(sequential)
+
 
 # Step 4 onwards remains unchanged...
 # (Continue as in the original script)
 
 # Summary and clustering steps will remain the same as they do not depend on spaCy.
 data %>% dplyr::select (cleaned_text_1) %>% head()
+
+write.csv(data,"output/features.csv")
 
 
 
@@ -125,7 +143,7 @@ reduce_dfm <- function(dfm, top_n = 2000) {
   return(as.matrix(dfm_reduced))  # Convert to matrix for clustering
 }
 
-tfidf_reduced <- reduce_dfm(tfidf_features, top_n = 1000)
+tfidf_reduced <- reduce_dfm(tfidf_features, top_n = 2000)
 
 # Step 6: Clustering to Group Similar Themes
 apply_clustering <- function(features, k = 15) {  # Adjust `k` based on dataset size
@@ -139,7 +157,7 @@ kmeans_model_updated <- apply_clustering(tfidf_reduced , k = 15)
 
 
 # Step 7: Extract Top Terms from K-means Model
-extract_top_terms_from_kmeans <- function(kmeans_model, tfidf_matrix, top_n = 10) {
+extract_top_terms_from_kmeans <- function(kmeans_model, tfidf_matrix, top_n = 20) {
   # Extract cluster centers and term names
   cluster_centers <- kmeans_model$centers
   terms <- colnames(tfidf_matrix)
@@ -427,7 +445,38 @@ chatgpt_prompt <- paste0(
 # Print the prompt to verify
 cat(chatgpt_prompt)
 #-------------------------------------------------------------------------------
-# Here we need the cluster lables from chatgpt
+# Here we need the cluster labels from chatgpt the following format is an example for 19 cluster label. However, this needs to change based on the number of clusters
+
+# cluster_labels_Spacy <- c(
+#Cluster_1 = "Climate Change and Environmental Policy",
+#Cluster_2 = "Industrial Engineering and Technological Innovation",
+#...
+#)
+
+
+cluster_labels_Spacy <- c(
+  Cluster_1 = "Climate Change and Environmental Policy",
+  Cluster_2 = "Industrial Engineering and Technological Innovation",
+  Cluster_3 = "Water Resource Management and Pollution Control",
+  Cluster_4 = "Healthcare, Diagnostics, and Biotechnology",
+  Cluster_5 = "Electric and Sustainable Transportation",
+  Cluster_6 = "Construction, Architecture, and Building Technologies",
+  Cluster_7 = "Aerospace and Defense Engineering",
+  Cluster_8 = "Artificial Intelligence and Data Science",
+  Cluster_9 = "Supply Chain and Logistics Management",
+  Cluster_10 = "Fleet Electrification and Telematics Solutions",
+  Cluster_11 = "Agriculture, Food Systems, and AgriTech",
+  Cluster_12 = "Emissions Monitoring and Energy Extraction",
+  Cluster_13 = "Hydrogen Fuel Cells and Biotech Energy Systems",
+  Cluster_14 = "Wound Care and Biomedical Devices",
+  Cluster_15 = "Immersive Media, Entertainment, and Creative Technologies",
+  Cluster_16 = "Education Technologies and Learning Strategies",
+  Cluster_17 = "Business Strategy, Analytics, and Market Insights",
+  Cluster_18 = "Marketing, Customer Engagement, and Digital Services",
+  Cluster_19 = "Cybersecurity and Information Protection"
+)
+
+
 
 #-------------------------------------------------------------------------------
 # Here the cluster lables are updated within the model with ( )
@@ -443,9 +492,25 @@ cluster_labels_Spacy <- data.frame(
 )
 
 #-------------------------------------------------------------------------------
-saveRDS(new_kmeans_model , file = "output/models/dfm/27_new_kmeans_model_udpipe_11_01_25.rds")
+saveRDS(new_kmeans_model , file = "output/models/dfm/19_new_kmeans_model_udpipe_23_03_25.rds")
 # Copy to the package SectorinsightsV2 in -inst/models/kmeans/
-saveRDS( tfidf_reduced , file = "output/models/kmeans/27_tfidf_reduced_udpipe_11_01_25.rds")
+saveRDS( tfidf_reduced , file = "output/models/kmeans/19_tfidf_reduced_udpipe_23_03_25.rds")
+
+#--------------------------------------------------------------------------------------------
+# The final Structure for the Kmeans model is as follows 
+#List of 10
+#$ cluster        : int [1:n]         # Cluster assignment for each document
+#$ centers        : num [k × d]       # Cluster centroids (k clusters × d features)
+#$ totss          : num               # Total sum of squares (optional)
+#$ withinss       : num [1:k]         # Within-cluster sum of squares
+#$ tot.withinss   : num               # Total within-cluster sum of squares
+#$ betweenss      : num               # Between-cluster sum of squares
+#$ size           : int [1:k]         # Number of documents per cluster
+#$ iter           : int               # Number of iterations used in kmeans
+#$ ifault         : int               # Fault code (0 = success)
+#$ labels         : chr [1:n]         # Custom field: topic label for each document
+#- attr(*, "class"): chr "kmeans"
+
 
 
 
