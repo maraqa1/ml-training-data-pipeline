@@ -63,6 +63,8 @@ extract_cleaned_text <- function(description) {
   return(keywords)
 }
 
+
+
 # Apply the function to extract cleaned text
 library(furrr)
 library(progressr)
@@ -97,9 +99,10 @@ plan(sequential)
 # (Continue as in the original script)
 
 # Summary and clustering steps will remain the same as they do not depend on spaCy.
-data %>% dplyr::select (cleaned_text_1) %>% head()
+data %>% dplyr::select (PublicDescription,cleaned_text_1) %>% head()
 
 write.csv(data,"output/features.csv")
+data<- read.csv("output/features.csv")
 
 
 
@@ -274,11 +277,17 @@ split_clusters_with_lda <- function(tfidf_reduced, kmeans_model, k = 5, coherenc
     avg_coherence <- mean(coherence_scores)
     cat("   Average topic coherence for Cluster", cluster_id, ":", avg_coherence, "\n")
     
-    # Decide whether to split
-    if (avg_coherence < coherence_threshold) {
-      cat("   Cluster", cluster_id, "is not cohesive enough for splitting.\n")
+    # Decide whether to split - split high coherence clusters
+   ## if (avg_coherence < coherence_threshold) {
+   ##   cat("   Cluster", cluster_id, "is not cohesive enough for splitting.\n")
+   ##   next
+  ##  }
+    
+    if (avg_coherence >= coherence_threshold) {
+      cat("   Cluster", cluster_id, "is cohesive and will not be split.\n")
       next
     }
+    
     
     # Assign documents to LDA topics
     document_topics <- apply(lda_model$theta, 1, which.max)
@@ -372,7 +381,7 @@ update_kmeans_model <- function(kmeans_model, new_clusters, tfidf_reduced) {
 
 
 # Step 1: Analyze and split clusters
-new_clusters <- split_clusters_with_lda(tfidf_reduced, kmeans_model_updated , k = 5,coherence_threshold = 0.08)
+new_clusters <- split_clusters_with_lda(tfidf_reduced, kmeans_model_updated , k = 5,coherence_threshold = 0.07)
 
 # Step 2: Renumber clusters to ensure sequential IDs
 new_clusters <- renumber_clusters(new_clusters)
