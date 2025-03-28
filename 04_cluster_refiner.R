@@ -368,7 +368,7 @@ splitClustersWithLDA_old <- function(tfidf_model, kmeans_model, lda_topics = 5, 
   return(updated_kmeans)
 }
 
-splitClustersWithLDA <- function(tfidf_model, kmeans_model, lda_topics = 5, coherence_threshold = 0.07) {
+splitClustersWithLDA_old_latest <- function(tfidf_model, kmeans_model, lda_topics = 5, coherence_threshold = 0.07) {
   library(topicmodels)
   library(Matrix)
   library(textmineR)
@@ -440,52 +440,187 @@ test_splitClustersWithLDA <- function() {
 }
 # Uncomment to run the test:
 # test_splitClustersWithLDA()
+#--------------------------------------------------------------------------------
+#' Split Low-Coherence Clusters Using LDA (Refined Strategy)
+#' 
+#' Cluster Splitting Logic (Coherence Strategy):
 
+#' This pipeline uses a coherence-based strategy to identify clusters that are poorly defined (i.e., low topic coherence) and then selectively applies LDA-based splitting. To avoid unnecessary fragmentation, only clusters that meet both of the following conditions are split:
+#'  Coherence score is below 0.07
+#' 
+#' Cluster contains 10 or more documents
+#
+#' This strategy ensures meaningful refinement of noisy or mixed clusters while preserving small or already coherent clusters. It balances interpretability with quality of topic separation.
+#'
+#' This function evaluates clusters using topic coherence. Low-coherence clusters
+#' are considered for splitting only if they have enough documents to support meaningful topic separation.
+#'
+#' @param tfidf_model A `dgCMatrix` representing the TF-IDF matrix.
+#' @param kmeans_model A `kmeans` object containing the clustering model.
+#' @param lda_topics Integer: number of topics for LDA. Default is 5.
+#' @param coherence_threshold Numeric: coherence score below which clusters are eligible for splitting. Default is 0.07.
+#' @param min_docs_for_split Integer: minimum number of documents in a cluster to attempt LDA-based splitting. Default is 10.
+#' @return An updated `kmeans` model with new cluster assignments and recalculated centroids.
+#'
+#' @details
+#' This refined logic ensures that only low-coherence clusters with sufficient size are split. Very small or noisy clusters are preserved as-is to avoid artificial fragmentation.
+#'
+#' Coherence is calculated using `textmineR::CalcProbCoherence`, and LDA is applied
+#' only when a cluster has both low coherence and enough documents to support
+#' stable topic modeling.
+#'
+#' @examples
+#' updated_kmeans <- splitClustersWithLDA(tfidf_model, kmeans_model, lda_topics = 5, coherence_threshold = 0.07)
+splitClustersWithLDA <- function(tfidf_model, kmeans_model, lda_topics = 5, coherence_threshold = 0.07, min_docs_for_split = 10) {
+  library(topicmodels)
+  library(Matrix)
+  library(textmineR)
+  
+  message("🔹 Splitting low-coherence clusters (Refined Strategy)...")
+  
+  # Step 1: Compute coherence scores for all clusters
+  cluster_labels <- kmeans_model$cluster
+  coherence_scores <- computeCoherenceScore(tfidf_model, cluster_labels, lda_topics)
+  
+  # Step 2: Identify candidates for splitting
+  candidate_clusters <- names(which(coherence_scores < coherence_threshold))
+  
+  message("📌 Candidates for splitting (low coherence): ", paste(candidate_clusters, collapse = ", "))
+  
+  new_clusters <- cluster_labels
+  max_cluster_id <- max(cluster_labels)
+  
+  for (cluster_id in candidate_clusters) {
+    cluster_id <- as.integer(cluster_id)
+    cluster_indices <- which(cluster_labels == cluster_id)
+    
+    if (length(cluster_indices) < min_docs_for_split) {
+      message("⚠️ Skipping Cluster ", cluster_id, ": too few documents (", length(cluster_indices), ")")
+      next
+    }
+    
+    message("\n🔍 Splitting Cluster ", cluster_id, " with ", length(cluster_indices), " documents...")
+    
+    # Subset and preprocess
+    cluster_dfm <- tfidf_model[cluster_indices, , drop = FALSE]
+    cluster_matrix <- preprocessClusterMatrix(cluster_dfm)
+    if (is.null(cluster_matrix)) {
+      message("⚠️ Preprocessing failed. Skipping Cluster ", cluster_id)
+      next
+    }
+    
+    # Apply LDA
+    lda_model <- LDA(cluster_matrix, k = lda_topics, control = list(seed = 1234))
+    topic_assignments <- topics(lda_model)
+    
+    for (topic_id in unique(topic_assignments)) {
+      max_cluster_id <- max_cluster_id + 1
+      topic_docs <- cluster_indices[topic_assignments == topic_id]
+      new_clusters[topic_docs] <- max_cluster_id
+    }
+    
+    message("✅ Cluster ", cluster_id, " split into ", length(unique(topic_assignments)), " sub-clusters.")
+  }
+  
+  # Step 3: Reassign compact IDs
+  new_clusters <- as.numeric(factor(new_clusters))
+  updated_kmeans <- recomputeKMeansCenters(tfidf_model, new_clusters)
+  updated_kmeans$cluster <- new_clusters
+  
+  message("✅ Clustering updated after splitting.")
+  return(updated_kmeans)
+}
+
+
+
+#------------------------------------------------------------------------------
+
+library(quanteda)
 
 #' Extract Top Terms Per Cluster
 #'
-#' This function identifies the most important terms for each cluster.
+#' This function identifies the most important terms for each cluster directly
+#' from a dgCMatrix, using appropriate methods to handle sparse matrices efficiently.
 #'
-#' @param dfm A document-feature matrix (DFM) object.
+#' @param dfm A document-feature matrix (DFM) or a compatible matrix (e.g., dgCMatrix).
 #' @param cluster_assignments A numeric vector indicating cluster assignments for each document.
 #' @param top_n The number of top terms to extract per cluster.
 #' @return A named list where each cluster ID maps to a vector of top terms.
+
 extractClusterTerms <- function(dfm, cluster_assignments, top_n = 10) {
   library(quanteda)
-  
   message("🔹 Extracting Top Terms Per Cluster...")
   cluster_terms <- list()
   unique_clusters <- sort(unique(cluster_assignments))
   
   for (cluster_id in unique_clusters) {
+    message(paste("Processing Cluster", cluster_id))
     cluster_indices <- which(cluster_assignments == cluster_id)
-    cluster_dfm <- dfm[cluster_indices, ]
     
-    if (nrow(cluster_dfm) == 0) {
-      message(paste("⚠️ Cluster", cluster_id, "is empty. Skipping..."))
+    if (length(cluster_indices) == 0) {
+      message(paste("⚠️ Cluster", cluster_id, "has no documents. Skipping..."))
       next
     }
     
-    top_terms <- names(topfeatures(cluster_dfm, top_n))
+    # Subset the dfm for the current cluster
+    cluster_dfm <- dfm[cluster_indices, , drop = FALSE]
+    
+    # Check if there are documents to process
+    if (nrow(cluster_dfm) == 0) {
+      message(paste("⚠️ Cluster", cluster_id, "is empty after subsetting. Skipping..."))
+      next
+    }
+    
+    # Extract top terms directly using matrix operations
+    term_sums <- Matrix::colSums(cluster_dfm)
+    top_terms_indices <- order(term_sums, decreasing = TRUE)[1:min(top_n, length(term_sums))]
+    top_terms <- colnames(cluster_dfm)[top_terms_indices]
+    
     cluster_terms[[as.character(cluster_id)]] <- top_terms
-    message(paste("   ✅ Cluster", cluster_id, "- Top Terms:", paste(top_terms, collapse = ", ")))
+    message(paste("✅ Cluster", cluster_id, "- Top Terms:", paste(top_terms, collapse = ", ")))
   }
   
   return(cluster_terms)
 }
 
+
 # --- Testing extractClusterTerms ---
+library(Matrix)
+library(quanteda)
+
+# --- Testing extractClusterTerms ---
+
+
+# --- Updated Test Function for extractClusterTerms ---
 test_extractClusterTerms <- function() {
-  sample_dfm <- dfm(c("finance investment risk market",
-                      "health medicine treatment disease",
-                      "technology innovation AI machine learning"),
-                    tolower = TRUE, remove_punct = TRUE)
-  sample_clusters <- c(1, 2, 3)
-  terms <- extractClusterTerms(sample_dfm, sample_clusters, top_n = 5)
+  library(Matrix)
+  library(quanteda)
+  # Sample documents
+  documents <- c("finance investment risk market",
+                 "health medicine treatment disease",
+                 "technology innovation AI machine learning")
+  
+  # Create DFM using quanteda
+  tokens_sample <- tokens(documents, remove_punct = TRUE)
+  dfm_sample <- dfm(tokens_sample, tolower = TRUE)
+  
+  # Convert dfm to dgCMatrix
+  matrix_sample <- as(dfm_sample, "dgCMatrix")
+  
+  # Define mock cluster assignments
+  sample_clusters <- c(1, 2, 3)  # Each document is its own cluster for testing
+  
+  # Run the function
+  terms <- extractClusterTerms(matrix_sample, sample_clusters, top_n = 5)
+  
+  # Output
   print(terms)
 }
-# Uncomment to run the test:
-# test_extractClusterTerms()
+
+# Run the test
+#test_extractClusterTerms()
+
+
 
 
 #' Generate Cluster Labels using GPT
@@ -750,11 +885,11 @@ runPhase1Pipeline <- function(input_file, kmeans_path, tfidf_path, lda_topics = 
 # Run the pipeline with the correct file paths
 results <- runPhase1Pipeline(
   input_file = "C:/R_Home/UK_Innovate_topic_modelling/dirty_work/consolidated_document_with_sector_1st_complete_02_09_2024.csv",
- # kmeans_path = "output/models/dfm/27_new_kmeans_model_udpipe_11_02_25.rds",
- # tfidf_path = "output/models/kmeans/27_tfidf_reduced_udpipe_11_02_25.rds",
+  kmeans_path = "output/models/dfm/27_new_kmeans_model_udpipe_11_02_25.rds",
+  tfidf_path = "output/models/kmeans/27_tfidf_reduced_udpipe_11_02_25.rds",
  
-  kmeans_path = "output/models/dfm/19_new_kmeans_model_udpipe_23_03_25.rds",
-  tfidf_path = "output/models/kmeans/19_tfidf_reduced_udpipe_23_03_25.rds",
+ # kmeans_path = "output/models/kmeans/19_new_kmeans_model_udpipe_23_03_25.rds",
+  #tfidf_path = "output/models/dfm/19_tfidf_reduced_udpipe_23_03_25.rds",
   
   #embedding_path = "output/models/pre_trained/pretrained_embeddings.rds",
   lda_topics = 5,
