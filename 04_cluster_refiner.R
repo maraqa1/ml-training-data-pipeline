@@ -263,183 +263,7 @@ recomputeKMeansCenters <- function(tfidf_model, cluster_assignments) {
 
 #4. LDA-Based Cluster Splitting
 
-#' Split low-coherence clusters using LDA and update K-Means model.
-#'
-#' @param tfidf_model A `dgCMatrix` representing the TF-IDF matrix.
-#' @param kmeans_model A `kmeans` object containing the clustering model.
-#' @param lda_topics The number of topics for LDA (default: 5).
-#' @param coherence_threshold Minimum coherence score to keep a cluster (default: 0.07).
-#' @return An updated `kmeans` model with new cluster assignments and recalculated centroids.
-#' @examples
-#' updated_kmeans <- splitClustersWithLDA(tfidf_model, kmeans_model, 5, 0.07)
-#' Split low-coherence clusters using LDA and update K-Means model.
-#'
-#' @param tfidf_model A `dgCMatrix` representing the TF-IDF matrix.
-#' @param kmeans_model A `kmeans` object containing the clustering model.
-#' @param lda_topics The number of topics for LDA (default: 5).
-#' @param coherence_threshold Minimum coherence score to keep a cluster (default: 0.07).
-#' @return An updated `kmeans` model with new cluster assignments and recalculated centroids.
-#' @examples
-#' updated_kmeans <- splitClustersWithLDA(tfidf_model, kmeans_model, 5, 0.07)
-splitClustersWithLDA_old <- function(tfidf_model, kmeans_model, lda_topics = 5, coherence_threshold = 0.07) {
-  library(topicmodels)
-  library(Matrix)
-  library(textmineR)
-  
-  message("🔹 Splitting Clusters with LDA (DEBUG MODE)...")
-  
-  new_clusters <- kmeans_model$cluster  # Copy existing cluster assignments
-  max_cluster_id <- max(new_clusters)  # Get max current cluster ID
-  
-  unique_clusters <- unique(kmeans_model$cluster)
-  
-  for (cluster_id in unique_clusters) {
-    message("\n📊 Checking Cluster ", cluster_id, " for splitting...")
-    
-    cluster_indices <- which(kmeans_model$cluster == cluster_id)
-    cluster_dfm <- tfidf_model[cluster_indices, ]
-    
-    if (nrow(cluster_dfm) < 10) {
-      message("⚠️ Cluster ", cluster_id, " is too small for LDA splitting. Skipping...")
-      next
-    }
-    
-    message("📌 Cluster ", cluster_id, " - Document Count: ", nrow(cluster_dfm))
-    
-    # **Step 1: Preprocessing**
-    cluster_matrix <- preprocessClusterMatrix(cluster_dfm)
-    if (is.null(cluster_matrix)) next  # Skip if preprocessing failed
-    
-    # **Step 2: Apply LDA**
-    lda_model <- LDA(cluster_matrix, k = lda_topics, control = list(seed = 1234))
-    if (is.null(lda_model)) next  # Skip if LDA failed
-    
-    # **Step 3: Compute Coherence & Split**
-    topic_assignments <- topics(lda_model)  # Assign docs to topics
-    
-    for (topic_id in unique(topic_assignments)) {
-      max_cluster_id <- max_cluster_id + 1  # Increment cluster ID
-      topic_indices <- cluster_indices[topic_assignments == topic_id]
-      new_clusters[topic_indices] <- max_cluster_id  # Assign new cluster ID
-    }
-    
-    message("✅ Cluster ", cluster_id, " was split into ", length(unique(topic_assignments)), " sub-clusters.")
-  }
-  
-  message("🔹 Recalculating K-Means centroids after splitting...")
-  updated_kmeans <- recomputeKMeansCenters(tfidf_model, new_clusters)
-  
-  
-  #----------------------------------------------------------------------------
-  for (cluster_id in unique(kmeans_model$cluster)) {
-    cluster_indices <- which(kmeans_model$cluster == cluster_id)
-    cluster_dfm <- tfidf_model[cluster_indices, ]
-    
-    if (nrow(cluster_dfm) < 10) {
-      message("⚠️ Cluster ", cluster_id, " is too small for LDA splitting. Skipping...")
-      next
-    }
-    
-    cluster_matrix <- preprocessClusterMatrix(cluster_dfm)
-    if (is.null(cluster_matrix)) next  
-    
-    lda_model <- LDA(cluster_matrix, k = lda_topics, control = list(seed = 1234))
-    if (is.null(lda_model)) next  
-    
-    topic_assignments <- topics(lda_model)  
-    
-    for (topic_id in unique(topic_assignments)) {
-      max_cluster_id <- max(unique(kmeans_model$cluster)) + 1  # Get next valid ID
-      topic_indices <- cluster_indices[topic_assignments == topic_id]
-      new_clusters[topic_indices] <- max_cluster_id  # Assign proper IDs
-    }
-  }
-  
-  # 🚀 Ensure compact numbering to avoid cluster explosion
-  new_clusters <- as.numeric(factor(new_clusters))
-  updated_kmeans$cluster <- new_clusters
-  
-  
-  message("✅ Labels successfully mapped after cluster splitting.")
 
-  
-  #---------------------------------------------------------------------------
-  
-  return(updated_kmeans)
-}
-
-splitClustersWithLDA_old_latest <- function(tfidf_model, kmeans_model, lda_topics = 5, coherence_threshold = 0.07) {
-  library(topicmodels)
-  library(Matrix)
-  library(textmineR)
-  
-  message("🔹 Splitting Clusters with LDA...")
-  
-  new_clusters <- kmeans_model$cluster  # Copy existing cluster assignments
-  max_cluster_id <- max(new_clusters)  # Get max current cluster ID
-  
-  unique_clusters <- unique(kmeans_model$cluster)
-  
-  for (cluster_id in unique_clusters) {
-    message("\n📊 Checking Cluster ", cluster_id, " for splitting...")
-    
-    cluster_indices <- which(kmeans_model$cluster == cluster_id)
-    cluster_dfm <- tfidf_model[cluster_indices, , drop = FALSE]  # Ensure matrix format
-    
-    if (nrow(cluster_dfm) < 10) {
-      message("⚠️ Cluster ", cluster_id, " is too small for LDA splitting. Skipping...")
-      next
-    }
-    
-    message("📌 Cluster ", cluster_id, " - Document Count: ", nrow(cluster_dfm))
-    
-    # **Step 1: Preprocessing**
-    cluster_matrix <- preprocessClusterMatrix(cluster_dfm)
-    if (is.null(cluster_matrix)) next  # Skip if preprocessing failed
-    
-    # **Step 2: Apply LDA**
-    lda_model <- LDA(cluster_matrix, k = lda_topics, control = list(seed = 1234))
-    if (is.null(lda_model)) next  # Skip if LDA failed
-    
-    # **Step 3: Assign New Cluster IDs**
-    topic_assignments <- topics(lda_model)  # Get topic-based assignments
-    
-    for (topic_id in unique(topic_assignments)) {
-      max_cluster_id <- max_cluster_id + 1  # Increment safely
-      topic_indices <- cluster_indices[topic_assignments == topic_id]
-      new_clusters[topic_indices] <- max_cluster_id  # Assign new cluster ID
-    }
-    
-    message("✅ Cluster ", cluster_id, " was split into ", length(unique(topic_assignments)), " sub-clusters.")
-  }
-  
-  message("🔹 Recalculating K-Means centroids after splitting...")
-  updated_kmeans <- recomputeKMeansCenters(tfidf_model, new_clusters)
-  
-  updated_kmeans$cluster <- new_clusters  # Ensure correct mapping
-  
-  message("✅ Cluster assignments successfully updated after splitting.")
-  
-  return(updated_kmeans)
-}
-
-
-
-# --- Testing splitClustersWithLDA ---
-test_splitClustersWithLDA <- function() {
-  tfidf_model <- readRDS("tfidf_model.rds")  # Replace with sample file
-  kmeans_model <- readRDS("kmeans_model.rds")  # Replace with sample file
-  
-  models <- convertModelsForProcessing(tfidf_model, kmeans_model)
-  tfidf_model <- models$tfidf
-  kmeans_model <- models$kmeans
-  
-  new_clusters <- splitClustersWithLDA(tfidf_model, kmeans_model, lda_topics = 5, coherence_threshold = 0.07)
-  message("New cluster assignments: ")
-  print(table(new_clusters))
-}
-# Uncomment to run the test:
-# test_splitClustersWithLDA()
 #--------------------------------------------------------------------------------
 #' Split Low-Coherence Clusters Using LDA (Refined Strategy)
 #' 
@@ -531,11 +355,56 @@ splitClustersWithLDA <- function(tfidf_model, kmeans_model, lda_topics = 5, cohe
   return(updated_kmeans)
 }
 
+# --- Test function for splitClustersWithLDA ---
+test_splitClustersWithLDA <- function() {
+  library(quanteda)
+  library(Matrix)
+  
+  message("🧪 Running test for splitClustersWithLDA()...")
+  
+  # Step 1: Create sample documents
+  docs <- c(
+    "energy battery power electric charging",
+    "energy storage renewable power battery",
+    "finance investment risk banking money",
+    "stock markets economic growth inflation",
+    "healthcare hospital treatment diagnosis",
+    "medicine health doctor therapy"
+  )
+  
+  # Step 2: Build DFM and convert to sparse matrix
+  toks <- tokens(docs, remove_punct = TRUE)
+  dfm_mat <- dfm(toks, tolower = TRUE)
+  tfidf <- dfm_tfidf(dfm_mat)
+  tfidf_matrix <- as(tfidf, "dgCMatrix")
+  
+  # Step 3: Define fake cluster assignments (2 clusters)
+  cluster_assignments <- c(1, 1, 2, 2, 2, 2)
+  kmeans_model <- list(cluster = cluster_assignments)
+  class(kmeans_model) <- "kmeans"
+  
+  # Step 4: Run the split function
+  updated_model <- splitClustersWithLDA(
+    tfidf_model = tfidf_matrix,
+    kmeans_model = kmeans_model,
+    lda_topics = 2,
+    coherence_threshold = 0.9,  # Force splitting
+    min_docs_for_split = 2
+  )
+  
+  # Step 5: Output results
+  print("Updated cluster assignments:")
+  print(updated_model$cluster)
+  print("Updated cluster sizes:")
+  print(table(updated_model$cluster))
+}
+
+# Uncomment to run:
+#test_splitClustersWithLDA()
 
 
 #------------------------------------------------------------------------------
 
-library(quanteda)
 
 #' Extract Top Terms Per Cluster
 #'
