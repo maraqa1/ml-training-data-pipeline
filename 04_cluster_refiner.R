@@ -106,15 +106,43 @@ test_preprocessClusterMatrix <- function() {
 # test_preprocessClusterMatrix()
 
 #3. Compute Coherence Score for Each Cluster
-#' Compute Coherence Score Per Cluster
 #'
-#' For each cluster (given by cluster_labels), this function applies LDA on the cluster's
-#' document-term matrix and computes the coherence score.
+#' This function evaluates the semantic coherence of topics within each cluster by applying
+#' Latent Dirichlet Allocation (LDA) to the cluster's document-term matrix (DTM), then
+#' computing the average topic coherence using `textmineR::CalcProbCoherence`.
 #'
-#' @param tfidf_model A dgCMatrix TF-IDF model.
-#' @param cluster_labels A numeric vector of cluster assignments (one per document).
-#' @param lda_topics Integer specifying the number of LDA topics.
-#' @return A numeric vector of average coherence scores, named by cluster.
+#' @details
+#' Topic coherence measures the **semantic similarity** between the top words in a topic.
+#' A high coherence score indicates that the topic words co-occur frequently in documents,
+#' suggesting that the topic is well-defined and interpretable.
+#'
+#' Coherence is calculated by comparing the topic-word distributions (`beta` from LDA)
+#' with the actual word co-occurrence statistics in the document-term matrix.
+#'
+#' We use `CalcProbCoherence()` to compute the coherence for each topic, and take the average
+#' to represent the coherence score for the entire cluster.
+#'
+#' ## Example Interpretation:
+#' - High Coherence Topic: `["battery", "charging", "power", "electric", "vehicle"]`
+#'   → These words likely appear together in EV-related documents.
+#' - Low Coherence Topic: `["system", "project", "data", "use", "people"]`
+#'   → These are generic terms with low co-occurrence.
+#'
+#' ## Typical Use:
+#' - Clusters with coherence below a set threshold (e.g., `0.07`) are candidates for LDA-based splitting.
+#'
+#' @param tfidf_model A `dgCMatrix` (sparse TF-IDF matrix) representing the documents × terms.
+#' @param cluster_labels A numeric vector indicating the cluster assignment of each document.
+#' @param lda_topics Integer specifying the number of topics to generate per cluster (default = 5).
+#'
+#' @return A named numeric vector with the average coherence score for each cluster.
+#'
+#' @importFrom topicmodels LDA
+#' @importFrom Matrix colSums rowSums
+#' @importFrom textmineR CalcProbCoherence
+#'
+#' @export
+
 computeCoherenceScore <- function(tfidf_model, cluster_labels=kmeans_model$cluster, lda_topics = 5) {
   library(topicmodels)
   library(Matrix)
@@ -255,9 +283,6 @@ recomputeKMeansCenters <- function(tfidf_model, cluster_assignments) {
   class(updated_kmeans) <- "kmeans"
   return(updated_kmeans)
 }
-
-
-
 
 
 
