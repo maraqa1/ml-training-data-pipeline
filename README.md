@@ -95,8 +95,6 @@ Uses OpenAI GPT to extract structured topic and sector information.
 Cleans and filters text using UDPipe (NOUNs + VERBs). Outputs are saved
 and passed to the modeling stage.
 
-------------------------------------------------------------------------
-
 ### **Part 3 — Modeling & Optimization**
 
 📂 `02_build_models.R`\
