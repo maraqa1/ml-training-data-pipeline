@@ -40,10 +40,31 @@ clean_text <- function(text) {
 data <- data %>%
   mutate(cleaned_text = map_chr(combined_features, clean_text))
 
-# Step 3: Replace spaCy with udpipe for extracting nouns and verbs
-# Load the English model
+# ------------------------------------------------------------------------
+# 📌 Step 3: Replace spaCy with UDPipe for POS-based Keyword Extraction
+# ------------------------------------------------------------------------
+# UDPipe is a POS tagging and dependency parsing tool used for extracting
+# linguistically meaningful terms (e.g., NOUNs and VERBs) from text.
+# It is particularly useful when you want to filter out stopwords, 
+# adjectives, and non-content words and keep only the core meaningful units.
+
+# ✅ Official documentation and model download page:
+# ➤ https://bnosac.github.io/udpipe/docs/doc0.html
+
+# 📥 Download and load the English model (only once is required per environment)
+# The model is downloaded as a `.udpipe` file and then loaded into R
+
 ud_model <- udpipe_download_model(language = "english")
 ud_model <- udpipe_load_model(file = ud_model$file_model)
+
+# ------------------------------------------------------------------------
+# 📦 Function: Extract Cleaned Noun/Verb Text from a Description Field
+# ------------------------------------------------------------------------
+# This function:
+#   1. Cleans the text by removing punctuation and converting to lowercase.
+#   2. Applies UDPipe to annotate it (tokenization, POS tagging, etc.).
+#   3. Filters for only NOUNs and VERBs.
+#   4. Returns a comma-separated string of unique keywords.
 
 extract_cleaned_text <- function(description) {
   # Preprocess the text
@@ -63,9 +84,12 @@ extract_cleaned_text <- function(description) {
   return(keywords)
 }
 
+# ------------------------------------------------------------------------
+# ⚡️ Step 4: Apply the extraction to an entire dataset using parallel processing
+# ------------------------------------------------------------------------
+# We're using {furrr} and {progressr} to apply `extract_cleaned_text` 
+# efficiently across many documents in parallel, with a progress bar.
 
-
-# Apply the function to extract cleaned text
 library(furrr)
 library(progressr)
 
@@ -95,13 +119,20 @@ with_progress({
 plan(sequential)
 
 
-# Step 4 onwards remains unchanged...
-# (Continue as in the original script)
+# ------------------------------------------------------------------------
+# ✅ Output
+# Each row in `data$cleaned_text_1` now contains a string of unique NOUNs and VERBs
+# extracted from the corresponding input `cleaned_text`. These can be used to:
+#   - Generate cluster/topic labels Or in the future 
+#   - Train interpretable NLP models
+# ------------------------------------------------------------------------
+
+
 
 # Summary and clustering steps will remain the same as they do not depend on spaCy.
 data %>% dplyr::select (PublicDescription,cleaned_text_1) %>% head()
 
-write.csv(data,"output/features.csv")
+#write.csv(data,"output/features.csv") #if already saved
 data<- read.csv("output/features.csv")
 
 
@@ -216,12 +247,51 @@ cat(chatgpt_prompt)
 
 
 # Save the processed data
-write_csv(chatgpt_prompt, "output/chatgpt_prompt.csv")
+#write_csv(chatgpt_prompt, "output/chatgpt_prompt.csv")
 
 #-------------------------------------------------------------------------------
 # TUNE the Clusters using LDA
 
 #-------------------------------------------------------------------------------
+#' LDA-Based Sub-Clustering of Low-Coherence K-Means Clusters
+#'
+#' This function applies Latent Dirichlet Allocation (LDA) to each K-means cluster to evaluate
+#' topic coherence. Clusters that demonstrate low semantic coherence are considered noisy or 
+#' heterogeneous and are further split into subtopics based on LDA assignments.
+#'
+#' @param tfidf_reduced A `dgCMatrix` representing the TF-IDF matrix of all documents.
+#' @param kmeans_model A K-means model object with a `$cluster` field containing the cluster assignment of each document.
+#' @param k Integer. The number of topics to use when fitting LDA within each cluster. Default is 5.
+#' @param coherence_threshold Numeric. Minimum average topic coherence required to keep a cluster without splitting. Default is 0.07.
+#'
+#' @return A numeric vector of updated cluster assignments, where low-coherence clusters are split into subclusters.
+#'
+#' @details
+#' This function is built on NLP best practice that leverages topic coherence to assess the quality
+#' of K-means clusters from a semantic perspective. Topic coherence measures how frequently the 
+#' top topic words co-occur across documents — a proxy for interpretability and alignment.
+#'
+#' ## Expert Rationale:
+#' - **High Coherence** clusters contain semantically consistent documents and should be preserved.
+#' - **Low Coherence** clusters are likely to mix unrelated themes and benefit from sub-topic extraction.
+#'
+#' The function performs the following steps:
+#' 1. Iterates through each K-means cluster.
+#' 2. Fits an LDA model using `textmineR::FitLdaModel` to uncover hidden subtopics.
+#' 3. Calculates topic coherence using `CalcProbCoherence`.
+#' 4. If the average coherence is **below** the defined threshold, the cluster is split.
+#'    Otherwise, the cluster is retained as-is.
+#'
+#' ## Practical Example:
+#' - Cluster A contains documents about "battery", "charging", "electric vehicle", "power" — coherence is high ➝ **don't split**.
+#' - Cluster B has mixed content like "project", "funding", "animal", "robotics", "cancer" — coherence is low ➝ **split to find clearer topics**.
+#'
+#' This ensures that final clusters are topically tight, interpretable, and actionable for downstream tasks like labeling, summarization, or prediction.
+#'
+#' @importFrom textmineR FitLdaModel CalcProbCoherence
+#' @importFrom Matrix rowSums
+#' @export
+
 
 #LDA for Textual Sub-clustering
 #If working with textual data, you can apply Latent Dirichlet Allocation (LDA) on the subset to identify topics.
@@ -378,10 +448,135 @@ update_kmeans_model <- function(kmeans_model, new_clusters, tfidf_reduced) {
   # Return updated model
   return(kmeans_model)
 }
+#------------------------------------------------------------------------------
+#' 📚 LDA-Based Sub-Clustering with Adaptive k
+#'
+#' Splits low-coherence K-means clusters by applying LDA with an adaptive number of topics.
+#' Each cluster is split only if its average coherence is below a defined threshold.
+#'
+#' ## 🔍 Topic Coherence Rationale
+#' This function uses `textmineR::CalcProbCoherence()` to compute how semantically tight each topic is,
+#' based on word co-occurrence in documents. If coherence is low, the cluster is considered noisy and
+#' is split further using LDA topic assignments.
+#'
+#' ## 🧪 Coherence Calculation in `textmineR`
+#' `CalcProbCoherence()`:
+#' - Extracts the top N words from each topic in the LDA topic-word matrix (`phi`)
+#' - For each word pair (w_i, w_j), it calculates how often they appear together in the same document (TF-IDF or DTM)
+#' - Computes log-conditional probabilities and averages them across all pairs
+#' - Returns one coherence score per topic
+#'
+#' Coherence formula (simplified from Mimno et al., 2011):
+#' \deqn{C(t) = \sum_{m=2}^{M} \sum_{l=1}^{m-1} \log \frac{D(w_m, w_l) + 1}{D(w_l)}}
+#' where D(w_m, w_l) is the number of docs with both words, D(w_l) is the doc count for w_l.
+#'
+#' ## 📌 In This Function:
+#' - For each cluster, try several LDA topic numbers (`k_range`)
+#' - Choose the best k based on highest average coherence
+#' - If best coherence < threshold → split the cluster by topic assignments
+#' - If coherence is high → retain the cluster as is
+#'
+#' @param tfidf_reduced A `dgCMatrix` sparse TF-IDF matrix of all documents.
+#' @param kmeans_model A K-means model object with `$cluster` assignments.
+#' @param coherence_threshold Minimum coherence score to retain a cluster without splitting. Default: 0.07.
+#' @param k_range Integer vector indicating the candidate topic numbers to evaluate per cluster. Default: 2:6.
+#'
+#' @return A numeric vector of updated cluster assignments.
+#' @references Mimno et al. (2011). Optimizing Semantic Coherence in Topic Models. EMNLP. https://aclanthology.org/D11-1024/
+#' @export
+split_clusters_with_lda_adaptive <- function(tfidf_reduced, kmeans_model,
+                                             coherence_threshold = 0.07,
+                                             k_range = 2:6) {
+  library(textmineR)
+  library(Matrix)
+  
+  new_clusters <- kmeans_model$cluster
+  max_cluster_id <- max(kmeans_model$cluster)
+  
+  unique_clusters <- unique(kmeans_model$cluster)
+  
+  for (cluster_id in unique_clusters) {
+    cat("\n🔹 Processing Cluster:", cluster_id, "\n")
+    
+    cluster_indices <- which(kmeans_model$cluster == cluster_id)
+    cluster_data <- tfidf_reduced[cluster_indices, , drop = FALSE]
+    
+    if (nrow(cluster_data) < 10 || ncol(cluster_data) < 5) {
+      cat("   ⚠️ Cluster too small to split. Skipping.\n")
+      next
+    }
+    
+    cluster_data <- cluster_data[rowSums(cluster_data) > 0, , drop = FALSE]
+    if (nrow(cluster_data) < 10) {
+      cat("   ⚠️ Cluster became too small after removing empty rows.\n")
+      next
+    }
+    
+    best_k <- NULL
+    best_score <- -Inf
+    
+    for (k in k_range) {
+      lda_try <- try(
+        FitLdaModel(cluster_data, k = k, iterations = 200, burnin = 50, alpha = 0.1, beta = 0.01),
+        silent = TRUE
+      )
+      if (inherits(lda_try, "try-error")) next
+      
+      # 🔧 Ensure proper format for coherence calculation
+      cluster_data <- as(cluster_data, "dgCMatrix")
+      
+      coherence <- CalcProbCoherence(lda_try$phi, cluster_data)
+      avg_coherence <- mean(coherence, na.rm = TRUE)
+      
+      if (!is.nan(avg_coherence) && avg_coherence > best_score) {
+        best_k <- k
+        best_score <- avg_coherence
+      }
+    }
+    
+    if (is.null(best_k)) {
+      cat("   ❌ Failed to fit any LDA model. Skipping.\n")
+      next
+    }
+    
+    cat("   ✅ Best k =", best_k, "with coherence =", round(best_score, 4), "\n")
+    
+    if (best_score >= coherence_threshold) {
+      cat("   ✅ Cluster is coherent. No split needed.\n")
+      next
+    }
+    
+    # 🚀 Split using best_k
+    lda_model <- FitLdaModel(cluster_data, k = best_k, iterations = 500, burnin = 50)
+    doc_topics <- apply(lda_model$theta, 1, which.max)
+    unique_topics <- unique(doc_topics)
+    
+    for (topic_id in unique_topics) {
+      max_cluster_id <- max_cluster_id + 1
+      topic_indices <- cluster_indices[doc_topics == topic_id]
+      new_clusters[topic_indices] <- max_cluster_id
+    }
+    
+    cat("   🚀 Cluster", cluster_id, "was split into", length(unique_topics), "subclusters.\n")
+  }
+  
+  return(new_clusters)
+}
 
+
+#------------------------------------------------------------------------------
 
 # Step 1: Analyze and split clusters
-new_clusters <- split_clusters_with_lda(tfidf_reduced, kmeans_model_updated , k = 5,coherence_threshold = 0.07)
+# non adaptive 
+#new_clusters <- split_clusters_with_lda(tfidf_reduced, kmeans_model_updated , k = 5,coherence_threshold = 0.07)
+
+# Adaptive k - meaning k is dynamic and not fixed 
+new_clusters <-split_clusters_with_lda_adaptive(
+  tfidf_reduced = tfidf_reduced,        # your sparse TF-IDF matrix
+  kmeans_model = kmeans_model_updated,        # your fitted K-means model
+  coherence_threshold = 0.04,         # threshold for deciding when to split
+  k_range = 2:10                       # range of topic counts to evaluate
+)
 
 # Step 2: Renumber clusters to ensure sequential IDs
 new_clusters <- renumber_clusters(new_clusters)
@@ -391,34 +586,55 @@ new_kmeans_model <- update_kmeans_model(kmeans_model_updated , new_clusters, tfi
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #Extract Top Terms for Each Cluster:
+#------------------------------------------------------------------------------
+#' 🔍 Extract Top Terms Per Cluster (Based on TF-IDF Scores)
+#'
+#' Given a `dgCMatrix` TF-IDF representation and a k-means model with cluster assignments,
+#' this function identifies the most important terms for each cluster. Importance is
+#' determined by summing TF-IDF scores across all documents within each cluster.
+#'
+#' 🧪 Note on Scoring:
+#' This function uses **TF-IDF-weighted scores**, not raw term frequencies.
+#' The TF-IDF matrix encodes both:
+#'   - Term frequency in a document (TF)
+#'   - Inverse document frequency across corpus (IDF)
+#' The result emphasizes **highly relevant and distinctive terms per cluster.**
+#'
+#' @param tfidf_reduced A sparse TF-IDF matrix (`dgCMatrix`) of shape documents × terms.
+#' @param kmeans_model A k-means model object with a `$cluster` vector for document assignments.
+#' @param top_n Integer, number of top terms to extract per cluster. Default is 10.
+#'
+#' @return A named list. Each element contains a character vector of top terms for a cluster.
+#' @examples
+#' terms <- extract_cluster_terms(tfidf_reduced, kmeans_model, top_n = 20)
+#' print(terms[["Cluster_3"]])
+#' @export
 extract_cluster_terms <- function(tfidf_reduced, kmeans_model, top_n = 10) {
-  cat("Extracting top terms per cluster...\n")
+  cat("🔹 Extracting top terms per cluster (TF-IDF weighted)...\n")
   
-  # Initialize a list to store terms per cluster
   cluster_terms <- list()
+  unique_clusters <- sort(unique(kmeans_model$cluster))
   
-  # Get unique clusters
-  unique_clusters <- unique(kmeans_model$cluster)
-  
-  # Iterate over each cluster
   for (cluster_id in unique_clusters) {
-    cat("\nProcessing Cluster:", cluster_id, "\n")
+    cat("\n📂 Processing Cluster:", cluster_id, "\n")
     
-    # Subset data for the current cluster
+    # Subset rows (documents) for this cluster
     cluster_indices <- which(kmeans_model$cluster == cluster_id)
     cluster_data <- tfidf_reduced[cluster_indices, , drop = FALSE]
     
-    # Sum term frequencies across all documents in the cluster
+    # Sum TF-IDF scores across all documents in the cluster (column-wise sum)
     term_sums <- colSums(cluster_data)
     
-    # Get the top N terms for the cluster
-    top_terms <- names(sort(term_sums, decreasing = TRUE)[1:top_n])
+    # Select top_n terms based on highest cumulative TF-IDF scores
+    top_terms <- names(sort(term_sums, decreasing = TRUE)[1:min(top_n, length(term_sums))])
+    
+    # Store in list with cluster ID as name
     cluster_terms[[paste0("Cluster_", cluster_id)]] <- top_terms
     
-    cat("   Top terms for Cluster", cluster_id, ":", paste(top_terms, collapse = ", "), "\n")
+    cat("   🔑 Top terms:", paste(top_terms, collapse = ", "), "\n")
   }
   
-  cat("\nCompleted extracting terms for all clusters.\n")
+  cat("\n✅ Completed extracting TF-IDF-weighted top terms per cluster.\n")
   return(cluster_terms)
 }
 
@@ -454,6 +670,79 @@ chatgpt_prompt <- paste0(
 # Print the prompt to verify
 cat(chatgpt_prompt)
 #-------------------------------------------------------------------------------
+# Below is the automated label generation
+#-------------------------------------------------------------------------------
+#' 🧠 Generate Cluster Labels from Top Terms using ChatGPT
+#'
+#' This function accepts a named list of top terms per cluster (e.g., from
+#' `extract_cluster_terms()`), then queries OpenAI's ChatGPT API to produce
+#' short, descriptive labels for each cluster.
+#'
+#' TF-IDF top terms are used to summarize the content and theme of each cluster,
+#' and the prompt explicitly instructs ChatGPT to infer a label based on the
+#' distinctiveness of terms (TF-IDF weighted).
+#'
+#' @param cluster_terms A named list of clusters (e.g., "Cluster_1", "Cluster_2", ...)
+#'        with character vectors of top terms.
+#' @param api_key A string. Your OpenAI API key.
+#' @param model The GPT model to use. Default is "gpt-4".
+#' @return A named character vector of cluster labels, suitable for assignment as:
+#'         `cluster_labels_Spacy <- c(...)`
+#'
+#' @examples
+#' cluster_labels_Spacy <- generate_cluster_labels_spacy(cluster_terms, api_key = "your_api_key")
+#' print(cluster_labels_Spacy["Cluster_3"])
+#'
+#' @export
+generate_cluster_labels_spacy <- function(cluster_terms, api_key, model = "gpt-4") {
+  library(httr)
+  library(jsonlite)
+  
+  api_url <- "https://api.openai.com/v1/chat/completions"
+  cluster_labels <- character(length(cluster_terms))
+  names(cluster_labels) <- names(cluster_terms)
+  
+  for (cluster_id in names(cluster_terms)) {
+    
+    prompt <- paste0(
+      "You are an expert in Natural Language Processing and topic modeling.\n",
+      "Below is a list of top terms extracted from a document cluster using TF-IDF weighting.\n",
+      "TF-IDF reflects both term frequency and distinctiveness, so the terms are highly representative of this cluster.\n\n",
+      "Generate a short and meaningful label (2–5 words) that best summarizes the topic.\n",
+      "Avoid simply repeating the terms unless necessary.\n\n",
+      "Top terms: ", paste(cluster_terms[[cluster_id]], collapse = ", ")
+    )
+    
+    response <- POST(
+      url = api_url,
+      add_headers(Authorization = paste("Bearer", api_key)),
+      content_type_json(),
+      body = toJSON(list(
+        model = model,
+        messages = list(
+          list(role = "system", content = "You are a helpful assistant."),
+          list(role = "user", content = prompt)
+        )
+      ), auto_unbox = TRUE)
+    )
+    
+    parsed <- content(response, "parsed")
+    
+    label <- parsed$choices[[1]]$message$content
+    cluster_labels[[cluster_id]] <- label
+    
+    cat("✅", cluster_id, "→", label, "\n")
+  }
+  
+  return(cluster_labels)
+}
+
+
+cluster_labels_Spacy <- generate_cluster_labels_spacy(cluster_terms, api_key)
+
+# You can now print or save:
+dput(cluster_labels_Spacy)
+#-------------------------------------------------------------------------------
 # Here we need the cluster labels from chatgpt the following format is an example for 19 cluster label. However, this needs to change based on the number of clusters
 
 # cluster_labels_Spacy <- c(
@@ -461,29 +750,6 @@ cat(chatgpt_prompt)
 #Cluster_2 = "Industrial Engineering and Technological Innovation",
 #...
 #)
-
-
-cluster_labels_Spacy <- c(
-  Cluster_1 = "Climate Change and Environmental Policy",
-  Cluster_2 = "Industrial Engineering and Technological Innovation",
-  Cluster_3 = "Water Resource Management and Pollution Control",
-  Cluster_4 = "Healthcare, Diagnostics, and Biotechnology",
-  Cluster_5 = "Electric and Sustainable Transportation",
-  Cluster_6 = "Construction, Architecture, and Building Technologies",
-  Cluster_7 = "Aerospace and Defense Engineering",
-  Cluster_8 = "Artificial Intelligence and Data Science",
-  Cluster_9 = "Supply Chain and Logistics Management",
-  Cluster_10 = "Fleet Electrification and Telematics Solutions",
-  Cluster_11 = "Agriculture, Food Systems, and AgriTech",
-  Cluster_12 = "Emissions Monitoring and Energy Extraction",
-  Cluster_13 = "Hydrogen Fuel Cells and Biotech Energy Systems",
-  Cluster_14 = "Wound Care and Biomedical Devices",
-  Cluster_15 = "Immersive Media, Entertainment, and Creative Technologies",
-  Cluster_16 = "Education Technologies and Learning Strategies",
-  Cluster_17 = "Business Strategy, Analytics, and Market Insights",
-  Cluster_18 = "Marketing, Customer Engagement, and Digital Services",
-  Cluster_19 = "Cybersecurity and Information Protection"
-)
 
 
 
@@ -501,9 +767,9 @@ cluster_labels_Spacy <- data.frame(
 )
 
 #-------------------------------------------------------------------------------
-saveRDS(new_kmeans_model , file = "output/models/dfm/19_new_kmeans_model_udpipe_23_03_25.rds")
+saveRDS(new_kmeans_model , file = "output/models/kmeans/43_new_kmeans_model_udpipe_28_03_25.rds")
 # Copy to the package SectorinsightsV2 in -inst/models/kmeans/
-saveRDS( tfidf_reduced , file = "output/models/kmeans/19_tfidf_reduced_udpipe_23_03_25.rds")
+saveRDS( tfidf_reduced , file = "output/models/dfm/43_tfidf_reduced_udpipe_28_03_25.rds")
 
 #--------------------------------------------------------------------------------------------
 # The final Structure for the Kmeans model is as follows 
@@ -520,6 +786,71 @@ saveRDS( tfidf_reduced , file = "output/models/kmeans/19_tfidf_reduced_udpipe_23
 #$ labels         : chr [1:n]         # Custom field: topic label for each document
 #- attr(*, "class"): chr "kmeans"
 
+# 📊 Compute and Summarise Coherence Per Cluster with ChatGPT Labels
+summarise_cluster_coherence <- function(tfidf_reduced, kmeans_model, top_n = 30, n_topics = 2) {
+  library(textmineR)
+  library(dplyr)
+  library(Matrix)
+  
+  # Ensure matrix is in dgCMatrix format
+  tfidf_reduced <- as(tfidf_reduced, "dgCMatrix")
+  
+  clusters <- sort(unique(kmeans_model$cluster))
+  results <- list()
+  
+  for (clust in clusters) {
+    cat("🔍 Processing Cluster:", clust, "\n")
+    
+    # Subset documents in this cluster
+    doc_ids <- which(kmeans_model$cluster == clust)
+    cluster_matrix <- tfidf_reduced[doc_ids, , drop = FALSE]
+    
+    # Skip small or empty clusters
+    if (nrow(cluster_matrix) < 5 || sum(rowSums(cluster_matrix)) == 0) {
+      cat("⚠️ Cluster", clust, "skipped (too few documents or empty).\n")
+      results[[length(results)+1]] <- data.frame(
+        cluster = clust,
+        documents = length(doc_ids),
+        coherence = NA_real_,
+        label = kmeans_model$labels[doc_ids[1]]
+      )
+      next
+    }
+    
+    # Fit LDA
+    lda_model <- tryCatch({
+      FitLdaModel(cluster_matrix, k = n_topics, iterations = 200, burnin = 50, alpha = 0.1, beta = 0.01)
+    }, error = function(e) NULL)
+    
+    if (is.null(lda_model)) {
+      cat("❌ LDA failed for Cluster", clust, "\n")
+      results[[length(results)+1]] <- data.frame(
+        cluster = clust,
+        documents = length(doc_ids),
+        coherence = NA_real_,
+        label = kmeans_model$labels[doc_ids[1]]
+      )
+      next
+    }
+    
+    # Calculate coherence
+    coherence_vals <- CalcProbCoherence(lda_model$phi, cluster_matrix)
+    avg_coherence <- mean(coherence_vals, na.rm = TRUE)
+    
+    cat("✅ Cluster", clust, "→ Coherence:", round(avg_coherence, 4), "\n")
+    
+    results[[length(results)+1]] <- data.frame(
+      cluster = clust,
+      documents = length(doc_ids),
+      coherence = avg_coherence,
+      label = kmeans_model$labels[doc_ids[1]]
+    )
+  }
+  
+  # Return summary
+  summary_df <- bind_rows(results) %>% arrange(desc(coherence))
+  return(summary_df)
+}
 
-
-
+coherence_summary_df <- summarise_cluster_coherence(tfidf_reduced, new_kmeans_model)
+print(coherence_summary_df)
