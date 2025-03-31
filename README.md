@@ -451,7 +451,7 @@ These scripts produce the core modeling outputs:
  - A refined **K-means model** with document cluster assignments and
 GPT-generated labels.
 
-\- A **TF-IDF matrix (DFM)** based on linguistically filtered features
+ - A **TF-IDF matrix (DFM)** based on linguistically filtered features
 (NOUNs + VERBs via UDPipe). These outputs must be stored in a specific
 structure with defined naming conventions to enable seamless use within
 the package for classification, filtering, and dashboard visualizations.
